@@ -1332,6 +1332,7 @@ status_t Camera2Client::commandPlayRecordingSoundL() {
 }
 
 status_t Camera2Client::commandStartFaceDetectionL(int /*type*/) {
+if(true) return BAD_VALUE;
     ALOGV("%s: Camera %d: Starting face detection",
           __FUNCTION__, mCameraId);
     status_t res;
@@ -1369,6 +1370,7 @@ status_t Camera2Client::commandStartFaceDetectionL(int /*type*/) {
 status_t Camera2Client::commandStopFaceDetectionL(Parameters &params) {
     status_t res = OK;
     ALOGV("%s: Camera %d: Stopping face detection",
+if(true) return OK;
           __FUNCTION__, mCameraId);
 
     if (!params.enableFaceDetect) return OK;
