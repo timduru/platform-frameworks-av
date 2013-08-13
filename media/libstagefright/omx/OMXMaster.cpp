@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-//#define LOG_NDEBUG 0
+#define LOG_NDEBUG 0
 #define LOG_TAG "OMXMaster"
 #include <utils/Log.h>
 
@@ -30,8 +30,11 @@ namespace android {
 
 OMXMaster::OMXMaster()
     : mVendorLibHandle(NULL) {
+ALOGE("OMXMaster 1 ");
     addVendorPlugin();
+ALOGE("OMXMaster 2 ");
     addPlugin(new SoftOMXPlugin);
+ALOGE("OMXMaster 3 ");
 }
 
 OMXMaster::~OMXMaster() {
@@ -48,9 +51,11 @@ void OMXMaster::addVendorPlugin() {
 }
 
 void OMXMaster::addPlugin(const char *libname) {
+ALOGE("addPlugin(%s)", libname);
     mVendorLibHandle = dlopen(libname, RTLD_NOW);
 
     if (mVendorLibHandle == NULL) {
+ALOGE("addPlugin(%s) dlopen failed", libname);
         return;
     }
 
@@ -68,6 +73,7 @@ void OMXMaster::addPlugin(const char *libname) {
 }
 
 void OMXMaster::addPlugin(OMXPluginBase *plugin) {
+ALOGE("addPlugin");
     Mutex::Autolock autoLock(mLock);
 
     mPlugins.push_back(plugin);
@@ -79,6 +85,7 @@ void OMXMaster::addPlugin(OMXPluginBase *plugin) {
     while ((err = plugin->enumerateComponents(
                     name, sizeof(name), index++)) == OMX_ErrorNone) {
         String8 name8(name);
+ALOGE("addPlugin name:%s", name);
 
         if (mPluginByComponentName.indexOfKey(name8) >= 0) {
             ALOGE("A component of name '%s' already exists, ignoring this one.",
