@@ -779,6 +779,19 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
                 return err;
             }
         } else {
+
+            if (mNativeWindow != NULL
+                && !strncmp(mComponentName, "OMX.", 4)) {
+                status_t err = initNativeWindow();
+                if (err != OK) {
+                    return err;
+                }
+            }
+
+#ifdef QCOM_HARDWARE
+            ExtendedCodec::configureVideoDecoder(
+                    meta, mMIME, mOMX, mFlags, mNode, mComponentName);
+#endif
             status_t err = setVideoOutputFormat(
                     mMIME, meta);
 
@@ -831,16 +844,6 @@ status_t OMXCodec::configureCodec(const sp<MetaData> &meta) {
         }
 
         mQuirks &= ~kOutputBuffersAreUnreadable;
-    }
-
-    if (mNativeWindow != NULL
-        && !mIsEncoder
-        && !strncasecmp(mMIME, "video/", 6)
-        && !strncmp(mComponentName, "OMX.", 4)) {
-        status_t err = initNativeWindow();
-        if (err != OK) {
-            return err;
-        }
     }
 
     return OK;
