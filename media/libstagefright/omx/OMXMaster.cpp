@@ -86,6 +86,7 @@ void OMXMaster::addPlugin(OMXPluginBase *plugin, void *handle) {
                     name, sizeof(name), index++)) == OMX_ErrorNone) {
         String8 name8(name);
 
+        //ALOGV("plugin %d:%s ", plugin, name8.string());
         if (mPluginByComponentName.indexOfKey(name8) >= 0) {
             ALOGE("A component of name '%s' already exists, ignoring this one.",
                  name8.string());
@@ -106,8 +107,13 @@ void OMXMaster::clearPlugins() {
     Mutex::Autolock autoLock(mLock);
 
     typedef void (*DestroyOMXPluginFunc)(OMXPluginBase*);
-
+    
     for (unsigned int i = 0; i < mPlugins.size(); i++) {
+ ALOGI("TTTTT Plugin index %i", i);
+#ifdef TF101_OMX
+    // plugin crashes on delete => skip freeing, better than crash
+if(i==0 || i==1) continue;
+#endif
         OMXPluginBase *plugin = mPlugins.keyAt(i);
         if (plugin != NULL) {
             void *handle = mPlugins.valueAt(i);
@@ -129,6 +135,7 @@ void OMXMaster::clearPlugins() {
 
             plugin = NULL;
         }
+
     }
 
     mPluginByComponentName.clear();

@@ -35,6 +35,9 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_EXTN_FLAC_DECODER)),true)
     LOCAL_CFLAGS += -DQTI_FLAC_DECODER
 endif
 endif
+ifeq ($(BOARD_USES_PROPRIETARY_OMX),TF101)
+LOCAL_CFLAGS     += -DTF101_OMX
+endif
 
 LOCAL_MODULE:= libstagefright_omx
 LOCAL_CFLAGS += -Werror -Wall
