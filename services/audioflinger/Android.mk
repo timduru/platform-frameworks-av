@@ -67,6 +67,7 @@ LOCAL_SRC_FILES += FastThread.cpp FastThreadState.cpp
 LOCAL_SRC_FILES += FastCapture.cpp FastCaptureState.cpp
 
 LOCAL_CFLAGS += -DSTATE_QUEUE_INSTANTIATIONS='"StateQueueInstantiations.cpp"'
+LOCAL_CFLAGS += -fno-wrapv
 
 # Define ANDROID_SMP appropriately. Used to get inline tracing fast-path.
 ifeq ($(TARGET_CPU_SMP),true)
