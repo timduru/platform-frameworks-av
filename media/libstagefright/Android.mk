@@ -137,6 +137,10 @@ endif
 LOCAL_CFLAGS += -Wno-multichar
 LOCAL_CFLAGS += -fno-wrapv
 
+ifeq ($(TARGET_BOARD_CANT_REALLOCATE_OMX_BUFFERS),true)
+LOCAL_CFLAGS += -DBOARD_CANT_REALLOCATE_OMX_BUFFERS
+endif
+
 LOCAL_CLANG := true
 
 LOCAL_MODULE:= libstagefright
