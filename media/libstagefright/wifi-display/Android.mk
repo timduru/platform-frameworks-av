@@ -35,6 +35,10 @@ LOCAL_CFLAGS += -Wno-multichar -Werror -Wall
 LOCAL_CLANG := true
 LOCAL_SANITIZE := signed-integer-overflow
 
+ifeq ($(BOARD_NO_INTRA_MACROBLOCK_MODE_SUPPORT),true)
+LOCAL_CFLAGS += -DBOARD_NO_INTRA_MACROBLOCK_MODE_SUPPORT
+endif
+
 LOCAL_MODULE:= libstagefright_wfd
 
 LOCAL_MODULE_TAGS:= optional
