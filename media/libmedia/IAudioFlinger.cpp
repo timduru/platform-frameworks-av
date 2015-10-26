@@ -80,7 +80,8 @@ enum {
     RELEASE_AUDIO_PATCH,
     LIST_AUDIO_PATCHES,
     SET_AUDIO_PORT_CONFIG,
-    GET_AUDIO_HW_SYNC
+    GET_AUDIO_HW_SYNC,
+    SYSTEM_READY
 };
 
 #define MAX_ITEMS_PER_LIST 1024
@@ -121,7 +122,7 @@ public:
         // haveSharedBuffer
         if (sharedBuffer != 0) {
             data.writeInt32(true);
-            data.writeStrongBinder(sharedBuffer->asBinder());
+            data.writeStrongBinder(IInterface::asBinder(sharedBuffer));
         } else {
             data.writeInt32(false);
         }
@@ -174,9 +175,11 @@ public:
                                 uint32_t sampleRate,
                                 audio_format_t format,
                                 audio_channel_mask_t channelMask,
+                                const String16& opPackageName,
                                 size_t *pFrameCount,
                                 track_flags_t *flags,
                                 pid_t tid,
+                                int clientUid,
                                 int *sessionId,
                                 size_t *notificationFrames,
                                 sp<IMemory>& cblk,
@@ -190,11 +193,13 @@ public:
         data.writeInt32(sampleRate);
         data.writeInt32(format);
         data.writeInt32(channelMask);
+        data.writeString16(opPackageName);
         size_t frameCount = pFrameCount != NULL ? *pFrameCount : 0;
         data.writeInt64(frameCount);
         track_flags_t lFlags = flags != NULL ? *flags : (track_flags_t) TRACK_DEFAULT;
         data.writeInt32(lFlags);
         data.writeInt32((int32_t) tid);
+        data.writeInt32((int32_t) clientUid);
         int lSessionId = AUDIO_SESSION_ALLOCATE;
         if (sessionId != NULL) {
             lSessionId = *sessionId;
@@ -421,7 +426,7 @@ public:
     {
         Parcel data, reply;
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
-        data.writeStrongBinder(client->asBinder());
+        data.writeStrongBinder(IInterface::asBinder(client));
         remote()->transact(REGISTER_CLIENT, data, &reply);
     }
 
@@ -702,6 +707,7 @@ public:
                                     int32_t priority,
                                     audio_io_handle_t output,
                                     int sessionId,
+                                    const String16& opPackageName,
                                     status_t *status,
                                     int *id,
                                     int *enabled)
@@ -718,10 +724,11 @@ public:
 
         data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
         data.write(pDesc, sizeof(effect_descriptor_t));
-        data.writeStrongBinder(client->asBinder());
+        data.writeStrongBinder(IInterface::asBinder(client));
         data.writeInt32(priority);
         data.writeInt32((int32_t) output);
         data.writeInt32(sessionId);
+        data.writeString16(opPackageName);
 
         status_t lStatus = remote()->transact(CREATE_EFFECT, data, &reply);
         if (lStatus != NO_ERROR) {
@@ -897,6 +904,12 @@ public:
         }
         return (audio_hw_sync_t)reply.readInt32();
     }
+    virtual status_t systemReady()
+    {
+        Parcel data, reply;
+        data.writeInterfaceToken(IAudioFlinger::getInterfaceDescriptor());
+        return remote()->transact(SYSTEM_READY, data, &reply, IBinder::FLAG_ONEWAY);
+    }
 };
 
 IMPLEMENT_META_INTERFACE(AudioFlinger, "android.media.IAudioFlinger");
@@ -941,7 +954,7 @@ status_t BnAudioFlinger::onTransact(
             reply->writeInt32(flags);
             reply->writeInt32(sessionId);
             reply->writeInt32(status);
-            reply->writeStrongBinder(track->asBinder());
+            reply->writeStrongBinder(IInterface::asBinder(track));
             return NO_ERROR;
         } break;
         case OPEN_RECORD: {
@@ -950,27 +963,28 @@ status_t BnAudioFlinger::onTransact(
             uint32_t sampleRate = data.readInt32();
             audio_format_t format = (audio_format_t) data.readInt32();
             audio_channel_mask_t channelMask = data.readInt32();
+            const String16& opPackageName = data.readString16();
             size_t frameCount = data.readInt64();
             track_flags_t flags = (track_flags_t) data.readInt32();
             pid_t tid = (pid_t) data.readInt32();
+            int clientUid = data.readInt32();
             int sessionId = data.readInt32();
             size_t notificationFrames = data.readInt64();
             sp<IMemory> cblk;
             sp<IMemory> buffers;
             status_t status;
             sp<IAudioRecord> record = openRecord(input,
-                    sampleRate, format, channelMask, &frameCount, &flags, tid, &sessionId,
-                    &notificationFrames,
-                    cblk, buffers, &status);
+                    sampleRate, format, channelMask, opPackageName, &frameCount, &flags, tid,
+                    clientUid, &sessionId, &notificationFrames, cblk, buffers, &status);
             LOG_ALWAYS_FATAL_IF((record != 0) != (status == NO_ERROR));
             reply->writeInt64(frameCount);
             reply->writeInt32(flags);
             reply->writeInt32(sessionId);
             reply->writeInt64(notificationFrames);
             reply->writeInt32(status);
-            reply->writeStrongBinder(record->asBinder());
-            reply->writeStrongBinder(cblk->asBinder());
-            reply->writeStrongBinder(buffers->asBinder());
+            reply->writeStrongBinder(IInterface::asBinder(record));
+            reply->writeStrongBinder(IInterface::asBinder(cblk));
+            reply->writeStrongBinder(IInterface::asBinder(buffers));
             return NO_ERROR;
         } break;
         case SAMPLE_RATE: {
@@ -1247,16 +1261,17 @@ status_t BnAudioFlinger::onTransact(
             int32_t priority = data.readInt32();
             audio_io_handle_t output = (audio_io_handle_t) data.readInt32();
             int sessionId = data.readInt32();
+            const String16 opPackageName = data.readString16();
             status_t status;
             int id;
             int enabled;
 
             sp<IEffect> effect = createEffect(&desc, client, priority, output, sessionId,
-                    &status, &id, &enabled);
+                    opPackageName, &status, &id, &enabled);
             reply->writeInt32(status);
             reply->writeInt32(id);
             reply->writeInt32(enabled);
-            reply->writeStrongBinder(effect->asBinder());
+            reply->writeStrongBinder(IInterface::asBinder(effect));
             reply->write(&desc, sizeof(effect_descriptor_t));
             return NO_ERROR;
         } break;
@@ -1388,6 +1403,11 @@ status_t BnAudioFlinger::onTransact(
             reply->writeInt32(getAudioHwSyncForSession((audio_session_t)data.readInt32()));
             return NO_ERROR;
         } break;
+        case SYSTEM_READY: {
+            CHECK_INTERFACE(IAudioFlinger, data, reply);
+            systemReady();
+            return NO_ERROR;
+        } break;
         default:
             return BBinder::onTransact(code, data, reply, flags);
     }
@@ -1395,4 +1415,4 @@ status_t BnAudioFlinger::onTransact(
 
 // ----------------------------------------------------------------------------
 
-}; // namespace android
+} // namespace android

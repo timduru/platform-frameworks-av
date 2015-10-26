@@ -636,7 +636,15 @@ void ID3::Iterator::findFrame() {
                 | (mParent.mData[mOffset + 4] << 8)
                 | mParent.mData[mOffset + 5];
 
-            mFrameSize += 6;
+            if (mFrameSize == 0) {
+                return;
+            }
+            mFrameSize += 6; // add tag id and size field
+
+            // Prevent integer overflow in validation
+            if (SIZE_MAX - mOffset <= mFrameSize) {
+                return;
+            }
 
             // Prevent integer overflow in validation
             if (SIZE_MAX - mOffset <= mFrameSize) {
@@ -818,8 +826,8 @@ ID3::getAlbumArt(size_t *length, String8 *mime) const {
             mime->setTo((const char *)&data[1]);
             size_t mimeLen = strlen((const char *)&data[1]) + 1;
 
-            uint8_t picType = data[1 + mimeLen];
 #if 0
+            uint8_t picType = data[1 + mimeLen];
             if (picType != 0x03) {
                 // Front Cover Art
                 it.next();

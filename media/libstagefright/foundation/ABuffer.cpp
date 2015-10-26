@@ -52,6 +52,9 @@ ABuffer::ABuffer(void *data, size_t capacity)
 sp<ABuffer> ABuffer::CreateAsCopy(const void *data, size_t capacity)
 {
     sp<ABuffer> res = new ABuffer(capacity);
+    if (res->base() == NULL) {
+        return NULL;
+    }
     memcpy(res->data(), data, capacity);
     return res;
 }

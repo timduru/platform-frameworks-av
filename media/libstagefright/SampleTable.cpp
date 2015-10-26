@@ -235,7 +235,7 @@ status_t SampleTable::setSampleToChunkParams(
         return ERROR_MALFORMED;
     }
 
-    if (SIZE_MAX / sizeof(SampleToChunkEntry) <= mNumSampleToChunkOffsets)
+    if (SIZE_MAX / sizeof(SampleToChunkEntry) <= (size_t)mNumSampleToChunkOffsets)
         return ERROR_OUT_OF_RANGE;
 
     mSampleToChunkEntries =
@@ -344,7 +344,7 @@ status_t SampleTable::setTimeToSampleParams(
 
     mTimeToSampleCount = U32_AT(&header[4]);
     uint64_t allocSize = (uint64_t)mTimeToSampleCount * 2 * sizeof(uint32_t);
-    if (allocSize > SIZE_MAX) {
+    if (allocSize > UINT32_MAX) {
         return ERROR_OUT_OF_RANGE;
     }
     mTimeToSample = new (std::nothrow) uint32_t[mTimeToSampleCount * 2];
@@ -392,7 +392,7 @@ status_t SampleTable::setCompositionTimeToSampleParams(
 
     mNumCompositionTimeDeltaEntries = numEntries;
     uint64_t allocSize = (uint64_t)numEntries * 2 * sizeof(uint32_t);
-    if (allocSize > SIZE_MAX) {
+    if (allocSize > UINT32_MAX) {
         return ERROR_OUT_OF_RANGE;
     }
 

@@ -183,9 +183,24 @@ status_t convertMetaDataToMessage(
         msg->setInt32("max-input-size", maxInputSize);
     }
 
+    int32_t maxWidth;
+    if (meta->findInt32(kKeyMaxWidth, &maxWidth)) {
+        msg->setInt32("max-width", maxWidth);
+    }
+
+    int32_t maxHeight;
+    if (meta->findInt32(kKeyMaxHeight, &maxHeight)) {
+        msg->setInt32("max-height", maxHeight);
+    }
+
     int32_t rotationDegrees;
     if (meta->findInt32(kKeyRotation, &rotationDegrees)) {
         msg->setInt32("rotation-degrees", rotationDegrees);
+    }
+
+    int32_t fps;
+    if (meta->findInt32(kKeyFrameRate, &fps)) {
+        msg->setInt32("frame-rate", fps);
     }
 
     uint32_t type;
@@ -198,14 +213,14 @@ status_t convertMetaDataToMessage(
 
         CHECK(size >= 7);
         CHECK_EQ((unsigned)ptr[0], 1u);  // configurationVersion == 1
-        uint8_t profile = ptr[1];
-        uint8_t level = ptr[3];
+        uint8_t profile __unused = ptr[1];
+        uint8_t level __unused = ptr[3];
 
         // There is decodable content out there that fails the following
         // assertion, let's be lenient for now...
         // CHECK((ptr[4] >> 2) == 0x3f);  // reserved
 
-        size_t lengthSize = 1 + (ptr[4] & 3);
+        size_t lengthSize __unused = 1 + (ptr[4] & 3);
 
         // commented out check below as H264_QVGA_500_NO_AUDIO.3gp
         // violates it...
@@ -284,8 +299,8 @@ status_t convertMetaDataToMessage(
 
         CHECK(size >= 7);
         CHECK_EQ((unsigned)ptr[0], 1u);  // configurationVersion == 1
-        uint8_t profile = ptr[1] & 31;
-        uint8_t level = ptr[12];
+        uint8_t profile __unused = ptr[1] & 31;
+        uint8_t level __unused = ptr[12];
         ptr += 22;
         size -= 22;
 
@@ -388,6 +403,34 @@ status_t convertMetaDataToMessage(
         buffer->meta()->setInt32("csd", true);
         buffer->meta()->setInt64("timeUs", 0);
         msg->setBuffer("csd-0", buffer);
+
+        if (!meta->findData(kKeyOpusCodecDelay, &type, &data, &size)) {
+            return -EINVAL;
+        }
+
+        buffer = new (std::nothrow) ABuffer(size);
+        if (buffer.get() == NULL || buffer->base() == NULL) {
+            return NO_MEMORY;
+        }
+        memcpy(buffer->data(), data, size);
+
+        buffer->meta()->setInt32("csd", true);
+        buffer->meta()->setInt64("timeUs", 0);
+        msg->setBuffer("csd-1", buffer);
+
+        if (!meta->findData(kKeyOpusSeekPreRoll, &type, &data, &size)) {
+            return -EINVAL;
+        }
+
+        buffer = new (std::nothrow) ABuffer(size);
+        if (buffer.get() == NULL || buffer->base() == NULL) {
+            return NO_MEMORY;
+        }
+        memcpy(buffer->data(), data, size);
+
+        buffer->meta()->setInt32("csd", true);
+        buffer->meta()->setInt64("timeUs", 0);
+        msg->setBuffer("csd-2", buffer);
     }
 
     *format = msg;
@@ -590,19 +633,36 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
         meta->setInt32(kKeyMaxInputSize, maxInputSize);
     }
 
+    int32_t maxWidth;
+    if (msg->findInt32("max-width", &maxWidth)) {
+        meta->setInt32(kKeyMaxWidth, maxWidth);
+    }
+
+    int32_t maxHeight;
+    if (msg->findInt32("max-height", &maxHeight)) {
+        meta->setInt32(kKeyMaxHeight, maxHeight);
+    }
+
+    int32_t fps;
+    if (msg->findInt32("frame-rate", &fps)) {
+        meta->setInt32(kKeyFrameRate, fps);
+    }
+
     // reassemble the csd data into its original form
     sp<ABuffer> csd0;
     if (msg->findBuffer("csd-0", &csd0)) {
-        if (mime.startsWith("video/")) { // do we need to be stricter than this?
+        if (mime == MEDIA_MIMETYPE_VIDEO_AVC) {
             sp<ABuffer> csd1;
             if (msg->findBuffer("csd-1", &csd1)) {
                 char avcc[1024]; // that oughta be enough, right?
                 size_t outsize = reassembleAVCC(csd0, csd1, avcc);
                 meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
             }
-        } else if (mime.startsWith("audio/")) {
+        } else if (mime == MEDIA_MIMETYPE_AUDIO_AAC || mime == MEDIA_MIMETYPE_VIDEO_MPEG4) {
             int csd0size = csd0->size();
             char esds[csd0size + 31];
+            // The written ESDS is actually for an audio stream, but it's enough
+            // for transporting the CSD to muxers.
             reassembleESDS(csd0, esds);
             meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
         }
@@ -842,6 +902,89 @@ AString uriDebugString(const AString &uri, bool incognito) {
         return scheme;
     }
     return AString("<no-scheme URI suppressed>");
+}
+
+HLSTime::HLSTime(const sp<AMessage>& meta) :
+    mSeq(-1),
+    mTimeUs(-1ll),
+    mMeta(meta) {
+    if (meta != NULL) {
+        CHECK(meta->findInt32("discontinuitySeq", &mSeq));
+        CHECK(meta->findInt64("timeUs", &mTimeUs));
+    }
+}
+
+int64_t HLSTime::getSegmentTimeUs() const {
+    int64_t segmentStartTimeUs = -1ll;
+    if (mMeta != NULL) {
+        CHECK(mMeta->findInt64("segmentStartTimeUs", &segmentStartTimeUs));
+
+        int64_t segmentFirstTimeUs;
+        if (mMeta->findInt64("segmentFirstTimeUs", &segmentFirstTimeUs)) {
+            segmentStartTimeUs += mTimeUs - segmentFirstTimeUs;
+        }
+
+        // adjust segment time by playlist age (for live streaming)
+        int64_t playlistTimeUs;
+        if (mMeta->findInt64("playlistTimeUs", &playlistTimeUs)) {
+            int64_t playlistAgeUs = ALooper::GetNowUs() - playlistTimeUs;
+
+            int64_t durationUs;
+            CHECK(mMeta->findInt64("segmentDurationUs", &durationUs));
+
+            // round to nearest whole segment
+            playlistAgeUs = (playlistAgeUs + durationUs / 2)
+                    / durationUs * durationUs;
+
+            segmentStartTimeUs -= playlistAgeUs;
+            if (segmentStartTimeUs < 0) {
+                segmentStartTimeUs = 0;
+            }
+        }
+    }
+    return segmentStartTimeUs;
+}
+
+bool operator <(const HLSTime &t0, const HLSTime &t1) {
+    // we can only compare discontinuity sequence and timestamp.
+    // (mSegmentTimeUs is not reliable in live streaming case, it's the
+    // time starting from beginning of playlist but playlist could change.)
+    return t0.mSeq < t1.mSeq
+            || (t0.mSeq == t1.mSeq && t0.mTimeUs < t1.mTimeUs);
+}
+
+void writeToAMessage(sp<AMessage> msg, const AudioPlaybackRate &rate) {
+    msg->setFloat("speed", rate.mSpeed);
+    msg->setFloat("pitch", rate.mPitch);
+    msg->setInt32("audio-fallback-mode", rate.mFallbackMode);
+    msg->setInt32("audio-stretch-mode", rate.mStretchMode);
+}
+
+void readFromAMessage(const sp<AMessage> &msg, AudioPlaybackRate *rate /* nonnull */) {
+    *rate = AUDIO_PLAYBACK_RATE_DEFAULT;
+    CHECK(msg->findFloat("speed", &rate->mSpeed));
+    CHECK(msg->findFloat("pitch", &rate->mPitch));
+    CHECK(msg->findInt32("audio-fallback-mode", (int32_t *)&rate->mFallbackMode));
+    CHECK(msg->findInt32("audio-stretch-mode", (int32_t *)&rate->mStretchMode));
+}
+
+void writeToAMessage(sp<AMessage> msg, const AVSyncSettings &sync, float videoFpsHint) {
+    msg->setInt32("sync-source", sync.mSource);
+    msg->setInt32("audio-adjust-mode", sync.mAudioAdjustMode);
+    msg->setFloat("tolerance", sync.mTolerance);
+    msg->setFloat("video-fps", videoFpsHint);
+}
+
+void readFromAMessage(
+        const sp<AMessage> &msg,
+        AVSyncSettings *sync /* nonnull */,
+        float *videoFps /* nonnull */) {
+    AVSyncSettings settings;
+    CHECK(msg->findInt32("sync-source", (int32_t *)&settings.mSource));
+    CHECK(msg->findInt32("audio-adjust-mode", (int32_t *)&settings.mAudioAdjustMode));
+    CHECK(msg->findFloat("tolerance", &settings.mTolerance));
+    CHECK(msg->findFloat("video-fps", videoFps));
+    *sync = settings;
 }
 
 }  // namespace android
