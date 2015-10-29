@@ -1268,7 +1268,6 @@ status_t NuPlayer::onInstantiateSecureDecoders() {
             return err;
         }
     }
-
     return OK;
 }
 
@@ -1283,14 +1282,6 @@ void NuPlayer::onStart(int64_t startPositionUs) {
             return;
         }
     }
-    return OK;
-}
-
-void NuPlayer::onStart() {
-    mOffloadAudio = false;
-    mAudioEOS = false;
-    mVideoEOS = false;
-    mStarted = true;
 
     mOffloadAudio = false;
     mAudioEOS = false;

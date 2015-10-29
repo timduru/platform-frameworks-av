@@ -5517,7 +5517,7 @@ bool ACodec::UninitializedState::onAllocateComponent(const sp<AMessage> &msg) {
         err = omx->allocateNode(componentName.c_str(), observer, &node);
         androidSetThreadPriority(tid, prevPriority);
 
-        if(err == OK && node != NULL) {
+        if(err == OK && node != 0) {
             // set component name
             mCodec->mComponentName = componentName;
             mCodec->mFlags = 0;

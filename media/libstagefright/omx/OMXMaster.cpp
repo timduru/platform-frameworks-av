@@ -116,7 +116,7 @@ void OMXMaster::clearPlugins() {
         if (destroyOMXPlugin)
             destroyOMXPlugin(*it);
         else {
-           ALOGV("plugin %d", *it);
+           //ALOGV("plugin %d", *it);
 #ifdef TF101_OMX
            if( *it != NULL && plugin != 1) // 1st plugin is NV, crashes on delete => skip, better than crash for the moment
 #endif

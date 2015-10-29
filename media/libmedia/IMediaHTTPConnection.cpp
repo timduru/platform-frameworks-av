@@ -113,12 +113,6 @@ struct BpMediaHTTPConnection : public BpInterface<IMediaHTTPConnection> {
         if (lenOrErrorCode < 0) {
             return lenOrErrorCode;
         }
-        if (len > mMemory->size()) {
-            ALOGE("got %zu, but memory has %zu", len, mMemory->size());
-            return ERROR_OUT_OF_RANGE;
-        }
-
-        memcpy(buffer, mMemory->pointer(), len);
 
         size_t len = lenOrErrorCode;
 
