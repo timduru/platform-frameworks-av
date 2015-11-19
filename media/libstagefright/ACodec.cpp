@@ -5744,8 +5744,79 @@ bool ACodec::LoadedState::onConfigureComponent(
         ALOGE("[%s] configureCodec returning error %d",
               mCodec->mComponentName.c_str(), err);
 
-        mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
-        return false;
+        int32_t encoder;
+        if (!msg->findInt32("encoder", &encoder)) {
+            encoder = false;
+        }
+
+        if (!encoder && !strncmp(mime.c_str(), "video/", strlen("video/"))) {
+            Vector<OMXCodec::CodecNameAndQuirks> matchingCodecs;
+
+            OMXCodec::findMatchingCodecs(
+                mime.c_str(),
+                encoder, // createEncoder
+                NULL,  // matchComponentName
+                0,     // flags
+                &matchingCodecs);
+
+            status_t err = mCodec->mOMX->freeNode(mCodec->mNode);
+
+            if (err != OK) {
+                ALOGE("Failed to freeNode");
+                mCodec->signalError(OMX_ErrorUndefined, makeNoSideEffectStatus(err));
+                return false;
+            }
+
+            mCodec->mNode = 0;
+            AString componentName;
+            sp<CodecObserver> observer = new CodecObserver;
+
+            err = NAME_NOT_FOUND;
+            for (size_t matchIndex = 0; matchIndex < matchingCodecs.size();
+                    ++matchIndex) {
+                componentName = matchingCodecs.itemAt(matchIndex).mName.string();
+                if (!strcmp(mCodec->mComponentName.c_str(), componentName.c_str())) {
+                    continue;
+                }
+
+                pid_t tid = gettid();
+                int prevPriority = androidGetThreadPriority(tid);
+                androidSetThreadPriority(tid, ANDROID_PRIORITY_FOREGROUND);
+                err = mCodec->mOMX->allocateNode(componentName.c_str(), observer, &mCodec->mNode);
+                androidSetThreadPriority(tid, prevPriority);
+
+                if (err == OK) {
+                    break;
+                } else {
+                    ALOGW("Allocating component '%s' failed, try next one.", componentName.c_str());
+                }
+
+                mCodec->mNode = 0;
+            }
+
+            if (mCodec->mNode == 0) {
+                if (!mime.empty()) {
+                    ALOGE("Unable to instantiate a %scoder for type '%s' with err %#x.",
+                            encoder ? "en" : "de", mime.c_str(), err);
+                } else {
+                    ALOGE("Unable to instantiate codec '%s' with err %#x.", componentName.c_str(), err);
+                }
+
+                mCodec->signalError((OMX_ERRORTYPE)err, makeNoSideEffectStatus(err));
+                return false;
+            }
+
+            sp<AMessage> notify = new AMessage(kWhatOMXMessageList, mCodec);
+            observer->setNotificationMessage(notify);
+            mCodec->mComponentName = componentName;
+
+            err = mCodec->configureCodec(mime.c_str(), msg);
+        }
+
+        if (err != OK) {
+            mCodec->signalError((OMX_ERRORTYPE)err, makeNoSideEffectStatus(err));
+            return false;
+        }
     }
 
     {
