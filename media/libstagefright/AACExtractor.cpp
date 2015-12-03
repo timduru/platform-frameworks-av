@@ -229,7 +229,8 @@ sp<MetaData> AACExtractor::getTrackMetaData(size_t index, uint32_t /* flags */) 
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const size_t AACSource::kMaxFrameSize = 32*1024;
+// 8192 = 2^13, 13bit AAC frame size (in bytes)
+const size_t AACSource::kMaxFrameSize = 8192;
 
 AACSource::AACSource(
         const sp<DataSource> &source, const sp<MetaData> &meta,

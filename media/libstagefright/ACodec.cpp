@@ -2163,8 +2163,8 @@ status_t ACodec::configureCodec(
     int32_t maxInputSize;
     if (msg->findInt32("max-input-size", &maxInputSize)) {
         err = setMinBufferSize(kPortIndexInput, (size_t)maxInputSize);
-    } else /*if (!strcmp("OMX.Nvidia.aac.decoder", mComponentName.c_str()))*/ {
-        err = setMinBufferSize(kPortIndexInput, 32*1024);  // XXX
+    } else if (!strcmp("OMX.Nvidia.aac.decoder", mComponentName.c_str())) {
+        err = setMinBufferSize(kPortIndexInput, 8192);  // XXX
     }
 
     int32_t priority;

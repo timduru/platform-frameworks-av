@@ -86,7 +86,7 @@ void SoftAAC2::initPorts() {
     def.eDir = OMX_DirInput;
     def.nBufferCountMin = kNumInputBuffers;
     def.nBufferCountActual = def.nBufferCountMin;
-    def.nBufferSize = 32*1024;
+    def.nBufferSize = 8192;
     def.bEnabled = OMX_TRUE;
     def.bPopulated = OMX_FALSE;
     def.eDomain = OMX_PortDomainAudio;

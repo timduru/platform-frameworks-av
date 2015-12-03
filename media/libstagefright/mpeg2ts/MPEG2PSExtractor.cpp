@@ -156,7 +156,7 @@ status_t MPEG2PSExtractor::feedMore() {
     Mutex::Autolock autoLock(mLock);
 
     // How much data we're reading at a time
-    static const size_t kChunkSize = 32*1024;
+    static const size_t kChunkSize = 8192;
 
     for (;;) {
         status_t err = dequeueChunk();
