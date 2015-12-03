@@ -2007,8 +2007,7 @@ nsecs_t AudioTrack::processAudioBuffer()
         if (err != NO_ERROR) {
             if (err == TIMED_OUT || err == WOULD_BLOCK || err == -EINTR ||
                     (isOffloaded() && (err == DEAD_OBJECT))) {
-                // FIXME bug 25195759
-                return 1000000;
+                return 0;
             }
             ALOGE("Error %d obtaining an audio buffer, giving up.", err);
             return NS_NEVER;
