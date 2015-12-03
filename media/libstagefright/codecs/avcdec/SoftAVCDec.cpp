@@ -614,20 +614,6 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
         return;
     }
 
-    if (NULL == mCodecCtx) {
-        if (OK != initDecoder()) {
-            ALOGE("Failed to initialize decoder");
-            notify(OMX_EventError, OMX_ErrorUnsupportedSetting, 0, NULL);
-            mSignalledError = true;
-            return;
-        }
-    }
-    if (outputBufferWidth() != mStride) {
-        /* Set the run-time (dynamic) parameters */
-        mStride = outputBufferWidth();
-        setParams(mStride);
-    }
-
     List<BufferInfo *> &inQueue = getPortQueue(kInputPortIndex);
     List<BufferInfo *> &outQueue = getPortQueue(kOutputPortIndex);
 
@@ -746,14 +732,6 @@ void SoftAVC::onQueueFilled(OMX_U32 portIndex) {
             /* Check for unsupported dimensions */
             if (unsupportedResolution) {
                 ALOGE("Unsupported resolution : %dx%d", mWidth, mHeight);
-                notify(OMX_EventError, OMX_ErrorUnsupportedSetting, 0, NULL);
-                mSignalledError = true;
-                return;
-            }
-
-            bool allocationFailed = (IVD_MEM_ALLOC_FAILED == (s_dec_op.u4_error_code & 0xFF));
-            if (allocationFailed) {
-                ALOGE("Allocation failure in decoder");
                 notify(OMX_EventError, OMX_ErrorUnsupportedSetting, 0, NULL);
                 mSignalledError = true;
                 return;
