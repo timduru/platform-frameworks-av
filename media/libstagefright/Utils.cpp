@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 
 #include <utility>
+#include <vector>
 
 #include "include/ESDS.h"
 #include "include/HevcUtils.h"
@@ -45,6 +46,7 @@
 #include <media/AudioParameter.h>
 
 #include <stagefright/AVExtensions.h>
+#include <media/stagefright/FFMPEGSoftCodec.h>
 
 namespace android {
 
@@ -192,7 +194,7 @@ static void parseAacProfileFromCsd(const sp<ABuffer> &csd, sp<AMessage> &format)
 
     OMX_AUDIO_AACPROFILETYPE profile;
     if (profiles.map(audioObjectType, &profile)) {
-        format->setInt32("profile", profile);
+        format->setInt32("aac-profile", profile);
     }
 }
 
@@ -1058,7 +1060,15 @@ status_t convertMetaDataToMessage(
     }
 
     AVUtils::get()->convertMetaDataToMessage(meta, &msg);
+
+    FFMPEGSoftCodec::convertMetaDataToMessageFF(meta, &msg);
     *format = msg;
+
+#if 0
+    ALOGI("convertMetaDataToMessage from:");
+    meta->dumpToLog();
+    ALOGI("  to: %s", msg->debugString(0).c_str());
+#endif
 
     return OK;
 }
@@ -1380,24 +1390,24 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     // reassemble the csd data into its original form
     sp<ABuffer> csd0, csd1, csd2;
     if (msg->findBuffer("csd-0", &csd0)) {
+        int csd0size = csd0->size();
         if (mime == MEDIA_MIMETYPE_VIDEO_AVC) {
             sp<ABuffer> csd1;
             if (msg->findBuffer("csd-1", &csd1)) {
-                char avcc[1024]; // that oughta be enough, right?
-                size_t outsize = reassembleAVCC(csd0, csd1, avcc);
-                meta->setData(kKeyAVCC, kKeyAVCC, avcc, outsize);
+                std::vector<char> avcc(csd0size + csd1->size() + 1024);
+                size_t outsize = reassembleAVCC(csd0, csd1, avcc.data());
+                meta->setData(kKeyAVCC, kKeyAVCC, avcc.data(), outsize);
             }
         } else if (mime == MEDIA_MIMETYPE_AUDIO_AAC || mime == MEDIA_MIMETYPE_VIDEO_MPEG4) {
-            int csd0size = csd0->size();
-            char esds[csd0size + 31];
+            std::vector<char> esds(csd0size + 31);
             // The written ESDS is actually for an audio stream, but it's enough
             // for transporting the CSD to muxers.
-            reassembleESDS(csd0, esds);
-            meta->setData(kKeyESDS, kKeyESDS, esds, sizeof(esds));
+            reassembleESDS(csd0, esds.data());
+            meta->setData(kKeyESDS, kKeyESDS, esds.data(), esds.size());
         } else if (mime == MEDIA_MIMETYPE_VIDEO_HEVC) {
-            uint8_t hvcc[1024]; // that oughta be enough, right?
-            size_t outsize = reassembleHVCC(csd0, hvcc, 1024, 4);
-            meta->setData(kKeyHVCC, kKeyHVCC, hvcc, outsize);
+            std::vector<uint8_t> hvcc(csd0size + 1024);
+            size_t outsize = reassembleHVCC(csd0, hvcc.data(), hvcc.size(), 4);
+            meta->setData(kKeyHVCC, kKeyHVCC, hvcc.data(), outsize);
         } else if (mime == MEDIA_MIMETYPE_VIDEO_VP9) {
             meta->setData(kKeyVp9CodecPrivate, 0, csd0->data(), csd0->size());
         } else if (mime == MEDIA_MIMETYPE_AUDIO_OPUS) {
@@ -1424,8 +1434,10 @@ void convertMessageToMetaData(const sp<AMessage> &msg, sp<MetaData> &meta) {
     // XXX TODO add whatever other keys there are
     AVUtils::get()->convertMessageToMetaData(msg, meta);
 
+    FFMPEGSoftCodec::convertMessageToMetaDataFF(msg, meta);
+
 #if 0
-    ALOGI("converted %s to:", msg->debugString(0).c_str());
+    ALOGI("convertMessageToMetaData from %s to:", msg->debugString(0).c_str());
     meta->dumpToLog();
 #endif
 }
@@ -1559,8 +1571,6 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
     if (mapMimeToAudioFormat(info.format, mime) != OK) {
         ALOGE(" Couldn't map mime type \"%s\" to a valid AudioSystem::audio_format !", mime);
         return false;
-    } else {
-        ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
     }
 
     info.format  = AVUtils::get()->updateAudioFormat(info.format, meta);
@@ -1573,6 +1583,9 @@ bool canOffloadStream(const sp<MetaData>& meta, bool hasVideo,
     if (AVUtils::get()->canOffloadAPE(meta) != true) {
         return false;
     }
+
+    ALOGV("Mime type \"%s\" mapped to audio_format %d", mime, info.format);
+
     // Redefine aac format according to its profile
     // Offloading depends on audio DSP capabilities.
     int32_t aacaot = -1;
