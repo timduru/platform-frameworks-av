@@ -53,6 +53,10 @@
 #include <OMX_IndexExt.h>
 #include <OMX_AsString.h>
 
+#ifdef USE_SAMSUNG_COLORFORMAT
+#include <sec_format.h>
+#endif
+
 #include "include/avc_utils.h"
 #include "include/DataConverter.h"
 #include "omx/OMXUtils.h"
@@ -996,12 +1000,21 @@ status_t ACodec::setupNativeWindowSizeFormatAndUsage(
     memset(&mLastNativeWindowCrop, 0, sizeof(mLastNativeWindowCrop));
     mLastNativeWindowDataSpace = HAL_DATASPACE_UNKNOWN;
 
+#ifdef USE_SAMSUNG_COLORFORMAT
+    OMX_COLOR_FORMATTYPE eNativeColorFormat = def.format.video.eColorFormat;
+    setNativeWindowColorFormat(eNativeColorFormat);
+#endif
+
     ALOGV("gralloc usage: %#x(OMX) => %#x(ACodec)", omxUsage, usage);
     err = setNativeWindowSizeFormatAndUsage(
             nativeWindow,
             def.format.video.nFrameWidth,
             def.format.video.nFrameHeight,
+#ifdef USE_SAMSUNG_COLORFORMAT
+            eNativeColorFormat,
+#else
             def.format.video.eColorFormat,
+#endif
             mRotationDegrees,
             usage,
             reconnect);
@@ -1367,6 +1380,27 @@ void ACodec::dumpBuffers(OMX_U32 portIndex) {
                 _asString(info.mStatus), info.mStatus, info.mDequeuedAt);
     }
 }
+
+#ifdef USE_SAMSUNG_COLORFORMAT
+void ACodec::setNativeWindowColorFormat(OMX_COLOR_FORMATTYPE &eNativeColorFormat)
+{
+    // In case of Samsung decoders, we set proper native color format for the Native Window
+    if (!strcasecmp(mComponentName.c_str(), "OMX.SEC.AVC.Decoder")
+        || !strcasecmp(mComponentName.c_str(), "OMX.SEC.FP.AVC.Decoder")
+        || !strcasecmp(mComponentName.c_str(), "OMX.SEC.MPEG4.Decoder")
+        || !strcasecmp(mComponentName.c_str(), "OMX.Exynos.AVC.Decoder")) {
+        switch (eNativeColorFormat) {
+            case OMX_COLOR_FormatYUV420SemiPlanar:
+                eNativeColorFormat = (OMX_COLOR_FORMATTYPE)HAL_PIXEL_FORMAT_YCbCr_420_SP;
+                break;
+            case OMX_COLOR_FormatYUV420Planar:
+            default:
+                eNativeColorFormat = (OMX_COLOR_FORMATTYPE)HAL_PIXEL_FORMAT_YCbCr_420_P;
+                break;
+        }
+    }
+}
+#endif
 
 status_t ACodec::cancelBufferToNativeWindow(BufferInfo *info) {
     CHECK_EQ((int)info->mStatus, (int)BufferInfo::OWNED_BY_US);
@@ -2506,6 +2540,82 @@ status_t ACodec::setIntraRefreshPeriod(uint32_t intraRefreshPeriod, bool inConfi
     }
 
     return OK;
+}
+
+status_t ACodec::configureTemporalLayers(
+        uint32_t numLayers, uint32_t numBLayers, bool inConfigure,
+        sp<AMessage> &outputFormat) {
+    if (!mIsVideo || !mIsEncoder) {
+        return INVALID_OPERATION;
+    }
+
+    OMX_VIDEO_PARAM_ANDROID_TEMPORALLAYERINGTYPE layerParams;
+    InitOMXParams(&layerParams);
+    layerParams.nPortIndex = kPortIndexOutput;
+    status_t err = mOMX->getParameter(
+            mNode, (OMX_INDEXTYPE)OMX_IndexParamAndroidVideoTemporalLayering,
+            &layerParams, sizeof(layerParams));
+
+    if (err != OK) {
+        return err;
+    }
+
+    if (numLayers > layerParams.nLayerCountMax ||
+            numBLayers > layerParams.nBLayerCountMax) {
+        ALOGE("Requested temporal layer count (total=%u B=%u) exceeds max (total=%d B=%d)",
+            numLayers, numBLayers, layerParams.nLayerCountMax,
+            layerParams.nBLayerCountMax);
+        return ERROR_UNSUPPORTED;
+    }
+
+    if (!inConfigure) {
+        OMX_VIDEO_CONFIG_ANDROID_TEMPORALLAYERINGTYPE layerConfig;
+        InitOMXParams(&layerConfig);
+        layerConfig.nPLayerCountActual = numLayers - numBLayers;
+        layerConfig.nBLayerCountActual = numBLayers;
+        layerConfig.bBitrateRatiosSpecified = OMX_FALSE;
+        layerConfig.nPortIndex = kPortIndexOutput;
+        layerConfig.ePattern = OMX_VIDEO_AndroidTemporalLayeringPatternAndroid;
+        err = mOMX->setConfig(
+                mNode, (OMX_INDEXTYPE)OMX_IndexConfigAndroidVideoTemporalLayering,
+                &layerConfig, sizeof(layerConfig));
+        return err;
+    }
+
+    layerParams.nPLayerCountActual = numLayers - numBLayers;
+    layerParams.nBLayerCountActual = numBLayers;
+    layerParams.bBitrateRatiosSpecified = OMX_FALSE;
+    layerParams.ePattern = OMX_VIDEO_AndroidTemporalLayeringPatternAndroid;
+    err = mOMX->setParameter(
+            mNode, (OMX_INDEXTYPE)OMX_IndexParamAndroidVideoTemporalLayering,
+            &layerParams, sizeof(layerParams));
+
+    if (err != OK) {
+        return err;
+    }
+
+    err = mOMX->getParameter(
+            mNode, (OMX_INDEXTYPE)OMX_IndexParamAndroidVideoTemporalLayering,
+            &layerParams, sizeof(layerParams));
+
+    if (err != OK) {
+        return err;
+    }
+
+    ALOGI("Temporal layers requested (total=%u B=%u) v/s configured (total=%u B=%u)",
+            numLayers, numBLayers, layerParams.nPLayerCountActual,
+            layerParams.nBLayerCountActual);
+
+#if 0
+    mOutputFormat = mOutputFormat->dup();
+    mOutputFormat->setInt32("num-temporal-layers",
+            layerParams.nPLayerCountActual + layerParams.nBLayerCountActual);
+    mOutputFormat->setInt32("num-temporal-b-layers", layerParams.nBLayerCountActual);
+#endif
+    outputFormat->setInt32("num-temporal-layers",
+            layerParams.nPLayerCountActual + layerParams.nBLayerCountActual);
+
+    return err;
 }
 
 status_t ACodec::setMinBufferSize(OMX_U32 portIndex, size_t size) {
@@ -3714,11 +3824,7 @@ status_t ACodec::setupVideoEncoder(
     OMX_VIDEO_CODINGTYPE compressionFormat;
     err = GetVideoCodingTypeFromMime(mime, &compressionFormat);
 
-    err = FFMPEGSoftCodec::setVideoFormat(err,
-                msg, mime, mOMX, mNode, mIsEncoder, &compressionFormat,
-                mComponentName.c_str());
     if (err != OK) {
-        ALOGE("Not a supported video mime type: %s", mime);
         return err;
     }
 
@@ -3811,6 +3917,21 @@ status_t ACodec::setupVideoEncoder(
     if (err == ERROR_UNSUPPORTED) { // support is optional
         ALOGI("[%s] cannot encode HDR static metadata. Ignoring.", mComponentName.c_str());
         err = OK;
+    }
+
+    if (compressionFormat == OMX_VIDEO_CodingAVC ||
+            compressionFormat == OMX_VIDEO_CodingHEVC) {
+        int32_t numLayers = 0;
+        int32_t numBLayers = 0;
+        if (msg->findInt32("num-temporal-layers", &numLayers)) {
+            msg->findInt32("num-temporal-b-layers", &numBLayers);
+            err = configureTemporalLayers(numLayers, numBLayers, true, outputFormat);
+            if (err != OK) {
+                ALOGE("Configuring temporal layers (P=%d B=%d) failed: %d",
+                        numLayers, numBLayers, err);
+                // not a fatal error
+            }
+        }
     }
 
     if (err == OK) {
@@ -4425,7 +4546,7 @@ status_t ACodec::setupErrorCorrectionParameters() {
 
     errorCorrectionType.bEnableHEC = OMX_FALSE;
     errorCorrectionType.bEnableResync = OMX_TRUE;
-    errorCorrectionType.nResynchMarkerSpacing = 0;
+    errorCorrectionType.nResynchMarkerSpacing = 256;
     errorCorrectionType.bEnableDataPartitioning = OMX_FALSE;
     errorCorrectionType.bEnableRVLC = OMX_FALSE;
 
@@ -4910,7 +5031,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
 
                 default:
                 {
-                    if (!strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
+                    if (!mIsEncoder && !strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
                         err = FFMPEGSoftCodec::getVideoPortFormat(portIndex,
                                 (int)videoDef->eCompressionFormat, notify, mOMX, mNode);
                         if (err == OK) {
@@ -5051,7 +5172,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
 
                 case OMX_AUDIO_CodingFLAC:
                 {
-                    if (!strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
+                    if (!mIsEncoder && !strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
                         err = FFMPEGSoftCodec::getAudioPortFormat(portIndex,
                                 (int)audioDef->eEncoding, notify, mOMX, mNode);
                         if (err != OK) {
@@ -5214,7 +5335,7 @@ status_t ACodec::getPortFormat(OMX_U32 portIndex, sp<AMessage> &notify) {
                 }
 
                 default:
-                    if (!strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
+                    if (!mIsEncoder && !strncmp(mComponentName.c_str(), "OMX.ffmpeg.", 11)) {
                         err = FFMPEGSoftCodec::getAudioPortFormat(portIndex,
                                 (int)audioDef->eEncoding, notify, mOMX, mNode);
                     }
@@ -7480,6 +7601,18 @@ status_t ACodec::setParameters(const sp<AMessage> &params) {
         if (err != OK) {
             ALOGI("[%s] failed setIntraRefreshPeriod. Failure is fine since this key is optional",
                     mComponentName.c_str());
+            err = OK;
+        }
+    }
+
+    int32_t numLayers = 0,
+            numBLayers = 0;
+    if (params->findInt32("num-temporal-layers", &numLayers)) {
+        params->findInt32("num-temporal-b-layers", &numBLayers);
+        status_t err = configureTemporalLayers(numLayers, numBLayers, false, mOutputFormat);
+        if (err != OK) {
+            ALOGE("Dynamic configuration of temporal layers (P=%d B=%d) failed: %d",
+                    numLayers, numBLayers, err);
             err = OK;
         }
     }

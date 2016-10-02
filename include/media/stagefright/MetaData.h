@@ -58,7 +58,6 @@ enum {
     kKeyCodedSampleBits   = 'cosb',  // int32_t
     kKeySampleFormat      = 'sfmt',  // int32_t
     kKeyBitsPerRawSample  = 'sbit',  // int32_t
-    kKeyFileFormat        = 'ffmt',  // cstring
     kKeyESDS              = 'esds',  // raw data
     kKeyAACProfile        = 'aacp',  // int32_t
     kKeyAVCC              = 'avcc',  // raw data
@@ -231,6 +230,9 @@ enum {
     // Indicate if it is OK to hold on to the MediaBuffer and not
     // release it immediately
     kKeyCanDeferRelease   = 'drel', // bool (int32_t)
+
+    kKeyTemporalLayerId  = 'iLyr', // int32_t, temporal layer-id. 0-based (0 => base layer)
+    kKeyTemporalLayerCount = 'cLyr', // int32_t, number of temporal layers encoded
 };
 
 enum {
