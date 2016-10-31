@@ -74,6 +74,10 @@ endif
 endif
 #QTI Resampler
 
+ifeq ($(BOARD_AUDIORECORD_SKIP_GET_CAPTURE_POSITION),true)
+    LOCAL_CFLAGS += -DAUDIORECORD_SKIP_GET_CAPTURE_POSITION
+endif
+
 LOCAL_MODULE:= libaudioflinger
 
 LOCAL_SRC_FILES += \
