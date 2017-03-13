@@ -530,7 +530,7 @@ VideoFrame *StagefrightMetadataRetriever::getFrameAtTime(
     MediaCodecList::findMatchingCodecs(
             mime,
             false, /* encoder */
-            0 /* MediaCodecList::kPreferSoftwareCodecs */,
+            MediaCodecList::kPreferSoftwareCodecs ,
             &matchingCodecs);
 
     for (size_t i = 0; i < matchingCodecs.size(); ++i) {
