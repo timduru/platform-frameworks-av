@@ -219,9 +219,9 @@ OMXNodeInstance::OMXNodeInstance(
       mNodeID(0),
       mHandle(NULL),
       mObserver(observer),
-      mDying(false),
       mSailed(false),
       mQueriedProhibitedExtensions(false),
+      mDying(false),
       mBufferIDCount(0)
 {
     mName = ADebug::GetDebugName(name);
